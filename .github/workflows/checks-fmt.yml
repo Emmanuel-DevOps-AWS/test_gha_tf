@@ -5,6 +5,9 @@ on:
     types: [opened, synchronize]
     paths:
       - '**/*.tf'
+  push:
+    paths:
+      - '**/*.tf'
 
 jobs:
   terraform-fmt:
@@ -50,16 +53,17 @@ jobs:
           done
           # Save failed files list to a file for use in the next step
           echo "$failed_files" > fmt-output.txt
-          # Set output for use in the next step, removing any newlines from the variable for proper evaluation in 'if' conditions
+          
+          # Set output for use in the next step by writing to the GITHUB_ENV file
           if [ -n "$failed_files" ]; then
-            echo "::set-output name=failed_files::true"
+            echo "failed_files=true" >> $GITHUB_ENV
           else
-            echo "::set-output name=failed_files::false"
+            echo "failed_files=false" >> $GITHUB_ENV
           fi
 
       # Step 5: Post PR Comment (only if there are failed files)
       - name: Post PR Comment if files failed formatting
-        if: ${{ steps.fmt.outputs.failed_files == 'true' }}
+        if: ${{ env.failed_files == 'true' }}
         uses: actions/github-script@v6
         with:
           script: |
@@ -74,5 +78,5 @@ jobs:
 
       # Step 6: Fail the job if there are failed files
       - name: Fail if files are not formatted
-        if: ${{ steps.fmt.outputs.failed_files == 'true' }}
+        if: ${{ env.failed_files == 'true' }}
         run: exit 1
