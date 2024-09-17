@@ -62,14 +62,13 @@ jobs:
 
       # Step 5: Post PR Comment if files failed formatting
       - name: Post PR Comment if files failed formatting
-        if: ${{ steps.check_failure.outputs.is_failure == 'true' }}
         run: |
           if grep -q "true" terraform_failed.txt; then
-            const output = readFileSync('fmt-output.txt', 'utf8');
+            output=$(cat fmt-output.txt)
             gh pr comment ${{ github.event.pull_request.number }} --body "Terraform format check failed for the following files:\n${output}"
           fi
 
-      # Step 6: Fail the job if there are failed files
+      # Step 6: Fail the job if files are not formatted
       - name: Fail if files are not formatted
         run: |
           if grep -q "true" terraform_failed.txt; then
