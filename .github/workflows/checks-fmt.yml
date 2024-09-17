@@ -5,77 +5,44 @@ on:
     types: [opened, synchronize]
     paths:
       - '**/*.tf'
-  push:
-    paths:
-      - '**/*.tf'
 
 jobs:
   terraform-fmt:
-    name: Check Terraform Format and Comment on PR (Only on Failure)
     runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-
     steps:
-      # Step 1: Checkout the repository with full history
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Fetch all history for proper comparison
 
-      # Step 2: Set up Terraform
-      - name: Setup Terraform
+      - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0  # Specify the desired Terraform version
 
-      # Step 3: Fetch base branch for comparison
-      - name: Fetch base branch
+      - name: Check Terraform formatting
+        id: fmt
+        shell: bash
         run: |
-          git fetch origin
-          git checkout ${{ github.base_ref }}
+          set +e
+          output=$(terraform fmt -check -recursive -list=true)
+          status=$?
+          echo "files=$output" >> $GITHUB_OUTPUT
+          echo "status=$status" >> $GITHUB_OUTPUT
+          exit 0
 
-      # Step 4: Run terraform fmt -check on all changed .tf files and capture the output
-      - name: Run terraform fmt -check and capture output
-        run: |
-          # Initialize an empty variable to store results
-          failed_files=""
-          # Check each changed .tf file
-          git diff --name-only ${{ github.base_ref }} -- | grep '\.tf$' | while IFS= read -r file; do
-            terraform fmt -check "$file"
-            if [ $? -ne 0 ]; then
-              failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it."
-            fi
-          done
-          # Save failed files list to a file for use in the next step
-          echo -e "$failed_files" > fmt-output.txt
-
-          # Set an environment variable to indicate whether formatting failed
-          if [ -n "$failed_files" ]; then
-            echo "TERRAFORM_FAILED=true" >> $GITHUB_ENV
-          else
-            echo "TERRAFORM_FAILED=false" >> $GITHUB_ENV
-          fi
-
-      # Step 5: Post PR Comment using actions/github-script@v6
-      - name: Post PR Comment
-        if: env.TERRAFORM_FAILED == 'true'
+      - name: Comment on PR if formatting issues found
+        if: steps.fmt.outputs.status != '0'
         uses: actions/github-script@v6
         with:
           script: |
-            const fs = require('fs');
-            const output = fs.readFileSync('fmt-output.txt', 'utf8');
-            await github.rest.issues.createComment({
+            const files = `\`${steps.fmt.outputs.files}\``;
+            const commentBody = `The following Terraform files are not formatted correctly:\n\n${files}\n\nPlease run \`terraform fmt <file-name>\` to fix.`;
+            github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Terraform format check failed for the following files:\n${output}`
+              body: commentBody
             });
 
-      # Step 6: Fail the job if files are not formatted
-      - name: Fail if files are not formatted
-        if: env.TERRAFORM_FAILED == 'true'
-        run: exit 1
+      - name: Fail the job if formatting issues found
+        if: steps.fmt.outputs.status != '0'
+        run: |
+          echo "Terraform formatting issues found."
+          exit 1
