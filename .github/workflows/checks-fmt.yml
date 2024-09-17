@@ -53,26 +53,29 @@ jobs:
 
             # Output the file contents for visibility
             cat fmt-output.txt
+            failed_files_count=$(tail -n +2 fmt-output.txt | wc -l)
+            echo "failed_files_count=$failed_files_count" >> $GITHUB_ENV
 
             # Always pass the job regardless of fmt check results
             exit 0
     
 
-    #   # Step 5: Post PR Comment
-    #   - name: Post PR Comment
-    #     uses: actions/github-script@v6
-    #     with:
-    #       script: |
-    #         const { readFileSync } = require('fs');
-    #         const output = readFileSync('fmt-output.txt', 'utf8');
-    #         github.rest.issues.createComment({
-    #           issue_number: context.issue.number,
-    #           owner: context.repo.owner,
-    #           repo: context.repo.repo,
-    #           body: output
-    #         });
+      # Step 5: Post PR Comment
+      - name: Post PR Comment
+        if: ${{ env.failed_files_count != '0' }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { readFileSync } = require('fs');
+            const output = readFileSync('fmt-output.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
 
-    #   # Step 6: Fail the job if there are failed files
-    #   - name: Fail if files are not formatted
-    #     if: ${{ steps.fmt.outputs.failed_files != '' }}
-    #     run: exit 1
+      # Step 6: Fail the job if there are failed files
+      - name: Fail if files are not formatted
+        if: ${{ env.failed_files_count != '0' }}
+        run: exit 1
