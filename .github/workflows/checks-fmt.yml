@@ -51,26 +51,31 @@ jobs:
             fi
           done
           # Save failed files list to a file for use in the next step
-          echo "$failed_files" > fmt-output.txt
+          echo -e "$failed_files" > fmt-output.txt
 
-          # Write failure flag to a file for later steps to check
+          # Set an environment variable to indicate whether formatting failed
           if [ -n "$failed_files" ]; then
-            echo "true" > terraform_failed.txt
+            echo "TERRAFORM_FAILED=true" >> $GITHUB_ENV
           else
-            echo "false" > terraform_failed.txt
+            echo "TERRAFORM_FAILED=false" >> $GITHUB_ENV
           fi
 
-      # Step 5: Post PR Comment if files failed formatting
-      - name: Post PR Comment if files failed formatting
-        run: |
-          if grep -q "true" terraform_failed.txt; then
-            output=$(cat fmt-output.txt)
-            gh pr comment ${{ github.event.pull_request.number }} --body "Terraform format check failed for the following files:\n${output}"
-          fi
+      # Step 5: Post PR Comment using actions/github-script@v6
+      - name: Post PR Comment
+        if: env.TERRAFORM_FAILED == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('fmt-output.txt', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Terraform format check failed for the following files:\n${output}`
+            });
 
       # Step 6: Fail the job if files are not formatted
       - name: Fail if files are not formatted
-        run: |
-          if grep -q "true" terraform_failed.txt; then
-            exit 1
-          fi
+        if: env.TERRAFORM_FAILED == 'true'
+        run: exit 1
