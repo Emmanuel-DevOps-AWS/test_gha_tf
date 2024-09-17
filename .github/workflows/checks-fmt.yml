@@ -23,11 +23,14 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for proper comparison
 
-      # Step 2: Set up Terraform
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0  # Specify the desired Terraform version
+      # Step 2: Install Terraform
+      - name: Install Terraform
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          wget https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_linux_amd64.zip
+          unzip terraform_1.5.0_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
 
       # Step 3: Fetch base branch for comparison
       - name: Fetch base branch
@@ -46,7 +49,7 @@ jobs:
 
           # Check each changed .tf file
           while IFS= read -r file; do
-            output=$(terraform fmt -check "$file" 2>&1)
+            output=$(terraform fmt -check -no-color "$file" 2>&1)
             exit_code=$?
             if [ $exit_code -ne 0 ] && [ $exit_code -ne 2 ]; then
               echo "Error checking file: $file"
@@ -55,7 +58,7 @@ jobs:
               # Collect the error message
               failed_files="$failed_files\n❌ \`$file\` could not be checked due to an error. Terraform exited with code $exit_code. Output:\n\`\`\`\n$output\n\`\`\`"
             elif [ $exit_code -eq 2 ]; then
-              failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it."
+              failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Output:\n\`\`\`\n$output\n\`\`\`\nPlease run \`terraform fmt $file\` to fix it."
             fi
           done < <(git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$')
 
