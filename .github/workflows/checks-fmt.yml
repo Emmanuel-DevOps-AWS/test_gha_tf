@@ -45,7 +45,7 @@ jobs:
           set +e
 
           # Check each changed .tf file
-          git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$' | while IFS= read -r file; do
+          while IFS= read -r file; do
             terraform fmt -check "$file"
             exit_code=$?
             if [ $exit_code -eq 1 ]; then
@@ -54,7 +54,7 @@ jobs:
             elif [ $exit_code -eq 2 ]; then
               failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it."
             fi
-          done
+          done < <(git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$')
 
           # Save failed files list to a file for use in the next step
           echo -e "$failed_files" > fmt-output.txt
