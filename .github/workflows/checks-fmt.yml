@@ -12,29 +12,42 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for comparison
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Check Terraform formatting
-        id: fmt
-        shell: bash
+      - name: Get changed .tf files
+        id: changed-files
         run: |
-          set +e
-          output=$(terraform fmt -check -recursive -list=true)
-          status=$?
-          echo "files=$output" >> $GITHUB_OUTPUT
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.tf')
+          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+
+      - name: Check formatting of changed .tf files
+        id: fmt
+        run: |
+          status=0
+          fmt_output=""
+          for file in ${{ steps.changed-files.outputs.changed_files }}; do
+            terraform fmt -check "$file"
+            if [ $? -ne 0 ]; then
+              fmt_output="$fmt_output\n$file"
+              status=1
+            fi
+          done
+          echo "files=$fmt_output" >> $GITHUB_OUTPUT
           echo "status=$status" >> $GITHUB_OUTPUT
-          exit 0
 
       - name: Comment on PR if formatting issues found
         if: steps.fmt.outputs.status != '0'
         uses: actions/github-script@v6
         with:
           script: |
-            const files = `\`${steps.fmt.outputs.files}\``;
-            const commentBody = `The following Terraform files are not formatted correctly:\n\n${files}\n\nPlease run \`terraform fmt <file-name>\` to fix.`;
-            github.rest.issues.createComment({
+            const files = `\`${steps.fmt.outputs.files.trim()}\``;
+            const commentBody = `The following Terraform files are not formatted correctly:\n${files}\n\nPlease run \`terraform fmt <file-name>\` to fix them.`;
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
