@@ -1,0 +1,79 @@
+name: Terraform Format Check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - '**/*.tf'
+  push:
+    paths:
+      - '**/*.tf'
+
+jobs:
+  terraform-fmt:
+    name: Check Terraform Format and Comment on PR (Only on Failure)
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper comparison
+
+      # Step 2: Set up Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0  # Specify the desired Terraform version
+
+      # Step 3: Fetch base branch for comparison
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.base_ref }}
+
+      # Step 4: Run terraform fmt -check on all changed .tf files and capture the output
+      - name: Run terraform fmt -check and capture output
+        id: fmt
+        run: |
+          # Initialize an empty variable to store results
+          failed_files=""
+          # Check each changed .tf file
+          git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$' | while IFS= read -r file; do
+            if ! terraform fmt -check "$file" || true; then
+              failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it."
+            fi
+          done
+          # Save failed files list to a file for use in the next step
+          echo "$failed_files" > fmt-output.txt
+          # Set output for use in the next step, removing any newlines from the variable for proper evaluation in 'if' conditions
+          if [ -n "$failed_files" ]; then
+            echo "::set-output name=failed_files::true"
+          else
+            echo "::set-output name=failed_files::false"
+          fi
+
+      # Step 5: Post PR Comment (only if there are failed files)
+      - name: Post PR Comment if files failed formatting
+        if: ${{ steps.fmt.outputs.failed_files == 'true' }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { readFileSync } = require('fs');
+            const output = readFileSync('fmt-output.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Terraform format check failed for the following files:\n${output}`
+            });
+
+      # Step 6: Fail the job if there are failed files
+      - name: Fail if files are not formatted
+        if: ${{ steps.fmt.outputs.failed_files == 'true' }}
+        run: exit 1
