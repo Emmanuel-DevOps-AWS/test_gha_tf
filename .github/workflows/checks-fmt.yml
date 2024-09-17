@@ -40,7 +40,6 @@ jobs:
 
       # Step 4: Run terraform fmt -check on all changed .tf files and capture the output
       - name: Run terraform fmt -check and capture output
-        id: fmt
         run: |
           # Initialize an empty variable to store results
           failed_files=""
@@ -53,30 +52,26 @@ jobs:
           done
           # Save failed files list to a file for use in the next step
           echo "$failed_files" > fmt-output.txt
-          
-          # Set output for use in the next step by writing to the GITHUB_ENV file
+
+          # Write failure flag to a file for later steps to check
           if [ -n "$failed_files" ]; then
-            echo "failed_files=true" >> $GITHUB_ENV
+            echo "true" > terraform_failed.txt
           else
-            echo "failed_files=false" >> $GITHUB_ENV
+            echo "false" > terraform_failed.txt
           fi
 
-      # Step 5: Post PR Comment (only if there are failed files)
+      # Step 5: Post PR Comment if files failed formatting
       - name: Post PR Comment if files failed formatting
-        if: ${{ env.failed_files == 'true' }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const { readFileSync } = require('fs');
+        if: ${{ steps.check_failure.outputs.is_failure == 'true' }}
+        run: |
+          if grep -q "true" terraform_failed.txt; then
             const output = readFileSync('fmt-output.txt', 'utf8');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `Terraform format check failed for the following files:\n${output}`
-            });
+            gh pr comment ${{ github.event.pull_request.number }} --body "Terraform format check failed for the following files:\n${output}"
+          fi
 
       # Step 6: Fail the job if there are failed files
       - name: Fail if files are not formatted
-        if: ${{ env.failed_files == 'true' }}
-        run: exit 1
+        run: |
+          if grep -q "true" terraform_failed.txt; then
+            exit 1
+          fi
