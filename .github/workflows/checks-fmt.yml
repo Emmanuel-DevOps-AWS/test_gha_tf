@@ -23,29 +23,37 @@ jobs:
         run: |
           git fetch origin ${{ github.base_ref }} --depth=1
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.tf')
-          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+          # Use <<EOF syntax to handle multiple lines
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Check formatting of changed .tf files
         id: fmt
         run: |
           status=0
           fmt_output=""
-          for file in ${{ steps.changed-files.outputs.changed_files }}; do
-            terraform fmt -check "$file"
+          # Read each file from the output variable
+          while IFS= read -r file; do
+            # Use '--' to indicate the end of options
+            terraform fmt -check -- "$file"
             if [ $? -ne 0 ]; then
-              fmt_output="$fmt_output\n$file"
+              fmt_output="${fmt_output}\n${file}"
               status=1
             fi
-          done
-          echo "files=$fmt_output" >> $GITHUB_OUTPUT
+          done <<< "${{ steps.changed-files.outputs.changed_files }}"
           echo "status=$status" >> $GITHUB_OUTPUT
+          # Use <<EOF syntax for multiline output
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$fmt_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Comment on PR if formatting issues found
         if: steps.fmt.outputs.status != '0'
         uses: actions/github-script@v6
         with:
           script: |
-            const files = `\`${steps.fmt.outputs.files.trim()}\``;
+            const files = steps.fmt.outputs.files.trim();
             const commentBody = `The following Terraform files are not formatted correctly:\n${files}\n\nPlease run \`terraform fmt <file-name>\` to fix them.`;
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
