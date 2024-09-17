@@ -39,22 +39,24 @@ jobs:
         run: |
             # Initialize an empty file to store results
             echo "Terraform format check results:" > fmt-output.txt
-      
+
             # Capture the list of changed .tf files
             changed_files=$(git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$')
-      
+
             # Check each changed .tf file
             while IFS= read -r file; do
-            if ! terraform fmt -check "$file" || true; then
-                # Append the failed file to the output file directly
-                echo "❌ \`$file\` is not properly formatted." >> fmt-output.txt
-            fi
+                if ! terraform fmt -check "$file"; then
+                    # Append the failed file to the output file
+                    echo "❌ \`$file\` is not properly formatted." >> fmt-output.txt
+                fi
             done <<< "$changed_files"
-      
+
             # Output the file contents for visibility
             cat fmt-output.txt
-      
 
+            # Always pass the job regardless of fmt check results
+            exit 0
+    
 
     #   # Step 5: Post PR Comment
     #   - name: Post PR Comment
