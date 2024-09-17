@@ -46,11 +46,14 @@ jobs:
 
           # Check each changed .tf file
           while IFS= read -r file; do
-            terraform fmt -check "$file"
+            output=$(terraform fmt -check "$file" 2>&1)
             exit_code=$?
-            if [ $exit_code -eq 1 ]; then
+            if [ $exit_code -ne 0 ] && [ $exit_code -ne 2 ]; then
               echo "Error checking file: $file"
-              exit 1
+              echo "Terraform exited with code $exit_code."
+              echo "Terraform output: $output"
+              # Collect the error message
+              failed_files="$failed_files\n❌ \`$file\` could not be checked due to an error. Terraform exited with code $exit_code. Output:\n\`\`\`\n$output\n\`\`\`"
             elif [ $exit_code -eq 2 ]; then
               failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it."
             fi
