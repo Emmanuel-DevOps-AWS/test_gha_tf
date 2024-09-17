@@ -37,23 +37,23 @@ jobs:
       - name: Run terraform fmt -check and capture output
         id: fmt
         run: |
-            # Initialize an empty variable to store results
-            output="Terraform format check results:\n"
-            failed_files=""
-
+            # Initialize an empty file to store results
+            echo "Terraform format check results:" > fmt-output.txt
+      
             # Capture the list of changed .tf files
             changed_files=$(git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$')
-
+      
             # Check each changed .tf file
             while IFS= read -r file; do
             if ! terraform fmt -check "$file" || true; then
-                failed_files="$failed_files\n❌ \`$file\` is not properly formatted."
+                # Append the failed file to the output file directly
+                echo "❌ \`$file\` is not properly formatted." >> fmt-output.txt
             fi
             done <<< "$changed_files"
-
-            # Save output to a file for use in the next step
-            echo -e "$failed_files" > fmt-output.txt
+      
+            # Output the file contents for visibility
             cat fmt-output.txt
+      
 
 
     #   # Step 5: Post PR Comment
