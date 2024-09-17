@@ -2,66 +2,72 @@ name: Terraform Format Check
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types:
+      - opened
+      - synchronize  # Triggered on push to the PR
     paths:
-      - '**/*.tf'
+      - '**/*.tf'    # Only trigger when .tf files are changed
 
 jobs:
-  terraform_fmt:
+  terraform-fmt-check:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.head.repo.full_name, github.repository) # Ensures it's not running on forked repos
-
     steps:
-    # Checkout the PR branch
-    - name: Checkout code
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 2 # Fetch base branch for comparison
+      # Step 1: Checkout the PR
+      - name: Checkout PR
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history to compare with the base branch
 
-    # Fetch base branch for comparison
-    - name: Fetch base branch
-      run: |
-        git fetch origin ${{ github.event.pull_request.base.ref }}
-    
-    # Get list of modified .tf files
-    - name: Get changed .tf files
-      id: changed_files
-      run: |
-        git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD | grep '\.tf$' > changed_tf_files.txt || true
-        files=$(cat changed_tf_files.txt)
-        if [ -z "$files" ]; then
-          echo "No .tf files modified, skipping the job."
-          exit 0
-        fi
-        echo "changed_tf_files=$files" >> $GITHUB_ENV
+      # Step 2: Fetch base branch for comparison
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
 
-    # Run terraform fmt -check on modified .tf files
-    - name: Run terraform fmt -check
-      id: terraform_fmt
-      run: |
-        failed_files=""
-        for file in ${{ env.changed_tf_files }}; do
-          terraform fmt -check "$file" || failed_files="$failed_files $file"
-        done
-        echo "failed_files=$failed_files" >> $GITHUB_ENV
-        echo "failed_files=$failed_files" >> $GITHUB_OUTPUT
+      # Step 3: List changed .tf files
+      - name: Get changed .tf files
+        id: get_tf_files
+        run: |
+          git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD | grep '.tf$' || true
 
-    # Add comment if there are unformatted files
-    - name: Comment on PR if formatting fails
-      if: ${{ env.failed_files != '' }}
-      uses: peter-evans/create-or-update-comment@v3
-      with:
-        issue-number: ${{ github.event.pull_request.number }}
-        body: |
-          The following .tf files are not formatted properly:
-          ${{ env.failed_files }}
+      # Step 4: Check if there are any changed .tf files
+      - name: Exit if no .tf files changed
+        if: steps.get_tf_files.outputs.files == ''
+        run: echo "No .tf files were changed. Exiting."
+      
+      # Step 5: Run terraform fmt check on the modified .tf files
+      - name: Run terraform fmt check
+        id: fmt_check
+        run: |
+          changed_files=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} HEAD | grep '.tf$' || true)
+          failed_files=()
+          for file in $changed_files; do
+            terraform fmt -check "$file" || failed_files+=("$file")
+          done
           
-          Please run the following command to format them:
-          \`\`\`
-          terraform fmt <file-name>
-          \`\`\`
+          # Save the result of failed files for the next step
+          echo "failed_files=${failed_files[@]}" >> $GITHUB_ENV
 
-    # Fail the job if there are unformatted files
-    - name: Fail if there are unformatted files
-      if: ${{ env.failed_files != '' }}
-      run: exit 1
+      # Step 6: Post a comment to the PR with the list of unformatted files
+      - name: Comment on PR if there are unformatted files
+        if: env.failed_files != ""
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const failedFiles = process.env.failed_files.split(" ");
+            if (failedFiles.length > 0) {
+              const fileList = failedFiles.map(file => `- \`${file}\``).join('\n');
+              const commentBody = `🚨 The following .tf files are not formatted properly:\n\n${fileList}\n\nPlease run \`terraform fmt <file>\` to fix the formatting issues.`;
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            }
+
+      # Step 7: Fail the job if there are unformatted files
+      - name: Fail if unformatted files exist
+        if: env.failed_files != ""
+        run: |
+          echo "There are unformatted .tf files. Failing the job."
+          exit 1
