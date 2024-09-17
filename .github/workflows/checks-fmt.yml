@@ -24,6 +24,7 @@ jobs:
           fetch-depth: 0  # Fetch all history for proper comparison
 
       # Step 2: Install Terraform
+        # Install Terraform manually
       - name: Install Terraform
         run: |
           sudo apt-get update
@@ -49,17 +50,17 @@ jobs:
 
           # Check each changed .tf file
           while IFS= read -r file; do
-            output=$(terraform fmt -check -diff -no-color "$file" 2>&1)
+            terraform fmt -check -no-color "$file"
             exit_code=$?
             if [ $exit_code -eq 0 ]; then
               # File is properly formatted
               continue
             elif [ $exit_code -eq 2 ]; then
               # File is improperly formatted
-              failed_files="$failed_files\n❌ \`$file\` is not properly formatted. Please run \`terraform fmt $file\` to fix it. Diff:\n\`\`\`diff\n$output\n\`\`\`"
+              failed_files="$failed_files\n❌ \`$file\` failed terraform fmt check, please run \`terraform fmt $file\` to fix"
             else
               # An error occurred
-              failed_files="$failed_files\n❌ \`$file\` could not be checked due to an error. Terraform exited with code $exit_code. Error:\n\`\`\`\n$output\n\`\`\`"
+              failed_files="$failed_files\n❌ \`$file\` could not be checked due to an error. Terraform exited with code $exit_code."
             fi
           done < <(git diff --name-only origin/${{ github.base_ref }} -- | grep '\.tf$')
 
@@ -85,7 +86,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `Terraform format check failed for the following files:\n${output}`
+              body: `${output}`
             });
 
       # Step 6: Fail the job if there are failed files
